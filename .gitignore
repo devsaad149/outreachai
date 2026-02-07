@@ -9,13 +9,16 @@ backend/.env
 frontend/.env
 
 # Database
-backend/database.sqlite
+*.sqlite
 
 # Build outputs
 frontend/dist/
-backend/uploads/
 
-# OS files
+# Uploads
+uploads/*
+!uploads/.gitkeep
+
+# OS
 .DS_Store
 Thumbs.db
 
