@@ -1,8 +1,36 @@
-const OpenAI = require('openai');
+const fetch = require('node-fetch');
 
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
+const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
+const DEFAULT_MODEL = process.env.OLLAMA_MODEL || 'llama2';
+
+// Ollama API call function
+const callOllama = async (messages, systemPrompt = "", temperature = 0.7) => {
+    try {
+        // Convert OpenAI-style messages to Ollama format
+        const prompt = `${systemPrompt}\n\n${messages.map(m => `${m.role}: ${m.content}`).join('\n')}\nassistant:`;
+
+        const response = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: DEFAULT_MODEL,
+                prompt: prompt,
+                stream: false,
+                temperature: temperature
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Ollama API error: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        return data.response;
+    } catch (error) {
+        console.error('Ollama API Error:', error);
+        throw error;
+    }
+};
 
 const generatePersonalizedEmail = async (lead, customInstructions = "") => {
     const prompt = `Write a brief, personalized cold outreach email (max 120 words) for ${lead.business_name}, 
@@ -13,45 +41,38 @@ const generatePersonalizedEmail = async (lead, customInstructions = "") => {
      ${customInstructions ? `Additional Instructions: ${customInstructions}` : ""}`;
 
     try {
-        const response = await openai.chat.completions.create({
-            model: "gpt-4",
-            messages: [
-                { role: "system", content: "You are an expert sales copywriter specializing in personalized cold outreach." },
-                { role: "user", content: prompt }
-            ],
-            temperature: 0.7,
-        });
+        const response = await callOllama(
+            [{ role: "user", content: prompt }],
+            "You are an expert sales copywriter specializing in personalized cold outreach.",
+            0.7
+        );
 
         return {
             subject: `Quick question for ${lead.business_name}`,
-            body: response.choices[0].message.content.trim()
+            body: response.trim()
         };
     } catch (error) {
-        console.error('OpenAI Error (Generate):', error);
+        console.error('Email Generation Error:', error);
         throw error;
     }
 };
 
 const analyzeSentiment = async (text) => {
     try {
-        const response = await openai.chat.completions.create({
-            model: "gpt-4",
-            messages: [
-                {
-                    role: "system",
-                    content: "Analyze the sentiment of the following email reply. Categorize as: POSITIVE, NEGATIVE, or NEUTRAL. POSITIVE means interested or asking for more info. NEGATIVE means not interested or asking to stop. NEUTRAL is unclear or generic questions."
-                },
-                { role: "user", content: text }
-            ],
-            temperature: 0,
-        });
+        const response = await callOllama(
+            [{ role: "user", content: text }],
+            "Analyze the sentiment of the following email reply. Categorize as: POSITIVE, NEGATIVE, or NEUTRAL. POSITIVE means interested or asking for more info. NEGATIVE means not interested or asking to stop. NEUTRAL is unclear or generic questions. Respond with ONLY the word: POSITIVE, NEGATIVE, or NEUTRAL.",
+            0
+        );
 
-        const sentiment = response.choices[0].message.content.toUpperCase().trim();
+        const sentiment = response.toUpperCase().trim();
+
+        // Clean up any extra text from the response
         if (sentiment.includes('POSITIVE')) return 'positive';
         if (sentiment.includes('NEGATIVE')) return 'negative';
         return 'neutral';
     } catch (error) {
-        console.error('OpenAI Error (Sentiment):', error);
+        console.error('Sentiment Analysis Error:', error);
         return 'neutral';
     }
 };
@@ -62,21 +83,18 @@ const generateFollowUpEmail = async (lead, previousEmails) => {
     Context: They were offered a free audit.`;
 
     try {
-        const response = await openai.chat.completions.create({
-            model: "gpt-4",
-            messages: [
-                { role: "system", content: "You are a helpful assistant following up on a previous outreach." },
-                { role: "user", content: prompt }
-            ],
-            temperature: 0.7,
-        });
+        const response = await callOllama(
+            [{ role: "user", content: prompt }],
+            "You are a helpful assistant following up on a previous outreach.",
+            0.7
+        );
 
         return {
             subject: `Re: Quick question for ${lead.business_name}`,
-            body: response.choices[0].message.content.trim()
+            body: response.trim()
         };
     } catch (error) {
-        console.error('OpenAI Error (Follow-up):', error);
+        console.error('Follow-up Email Error:', error);
         throw error;
     }
 };
